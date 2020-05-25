@@ -1,0 +1,211 @@
+---
+title: "Decreases in Fine Particle Air Pollution Between 1999 and 2012"
+output: 
+    html_document:
+        keep_md: True
+---
+
+# Synopsis
+In this short report we aim to describe changes fine particle (PM~2~.~5~) air pollution in the U.S between 1999 and 2012. We hypothesize that the PM~2~.~5~
+has decreased on average across the U.s due to regulatory requirements. To investigate this hypothesis we obtained data from the U.S. Environmental Protection Agency (EPA) which is collected from monitors across the U.S. Specifically, we obtained data from the years 1999 and 2012. From this data found found that, on
+average, levels of PM~2~.~5~ have decreased between 1999 and 2012. Most individual states also saw decreases in PM~2~.~5~, although some saw increases. 
+At an individual monitor, we found levels had decreased and were less volatile. 
+
+# Loading and Processing the Raw Data
+
+## Reading the 1999 data
+
+We read in the 1999 data, we leave out the variable names and header for now and specify that the separation character is "|" and missing values are coded as 
+empty strings. 
+```{r}
+pm99 <- read.table("1999.txt", comment.char = "#", 
+                  header = FALSE, sep = "|", na.strings = "")
+```
+
+After reading the 1999 data we check the dimensions to see the number of rows and columns.
+```{r}
+dim(pm99)
+```
+We Take a look at the first 6 rows in the first 10 variables to get a feel for the data
+```{r}
+head(pm99[,1:10])
+```
+Next we attach the Variable names to our dataframe. 
+```{r}
+col_names <- readLines("1999.txt",1)
+col_names <- strsplit(col_names,"|",fixed = T)
+names(pm99) <- make.names(col_names[[1]]) #Makes valid names out the character vector col_names[[1]]
+head(pm99[,1:7])
+```
+
+The column we are interested in is the Sample.Value column which contains the PM~2~.~5~ measurements.We print a brief summary.
+```{r}
+pm99_values <- pm99$Sample.Value
+summary(pm99_values)
+```
+
+From the summary we see there are missing values, we look at the proportion of the measurements that are missing for Sample.Value.
+```{r}
+mean(is.na(pm99_values))
+```
+Approximately 11.26% missing is relatively low, so we choose to ignore the missing values for now.
+
+## Reading the 2012 data
+
+We read the data from 2012 in the same way and preform the same exploratory commands. 
+ 
+```{r}
+ pm12 <- read.table("2012.txt", comment.char = "#", 
+                  header = FALSE, sep = "|", na.strings = "")
+
+names(pm12) <- make.names(col_names[[1]])
+```
+```{r}
+dim(pm12)
+```
+```{r}
+pm12_values <- pm12$Sample.Value
+summary(pm12_values)
+```
+```{r}
+mean(is.na(pm12_values))
+```
+We see less missing values from the 2012 data only 5.61%
+
+Note also the PM~2~.~5~ values have a large positive skew in both 1999 and 2012
+
+# Results
+
+## Entire U.S. analysis
+For the visualizing our results we will the ggplot2 and GGally packages. 
+```{r}
+library(ggplot2)
+library(GGally)
+```
+
+To show changes in PM~2~.~5~ across all monitors, we take the log of the values to account for the skew and make boxplots.
+
+```{r}
+boxplot_data<- rbind(data.frame(values=pm99_values,year="1999"),data.frame(values=pm12_values,year="2012"))
+boxplot_data$values <- log2(boxplot_data$values)
+ggplot(data=boxplot_data,aes(x=as.factor(year),y=values))+geom_boxplot(fill="slateblue", alpha=0.2)+xlab("Year")
+
+```
+```{r}
+summary(pm12_values)
+```
+Firstly we can see from 1999 to 2012 the median PM~2~.~5~ has gone down as have the Q~1~ and Q~3~ values.
+From both the summary and the boxplot we notice that there were negative values for PM~2~.~5~ recorded in 2012.These should not occur and we will investigate these now.
+```{r}
+negative <- pm12_values <0
+mean(negative,na.rm=T)
+```
+The proportion of negative values is relatively small. We now extract the date of each measurement from the original data frame to give us an idea of when these
+negative values are occurring. To do this we need the data formatted in Date format.
+```{r}
+dates <- pm12$Date
+dates <- as.Date(as.character(dates), "%Y%m%d")
+```
+Now we produce a table that shows in what month what percentage of the negative values were recorded. 
+```{r}
+missing.months <- month.name[as.POSIXlt(dates[negative])$mon + 1] 
+tab <- table(factor(missing.months, levels = month.name)) # produces a table with total number of negative oberavtions by month
+round(100 * tab/sum(tab)) 
+```
+This shows over 90% of all negative measurements of PM~2~.~5~ occur in the first 6 months of the year. 
+
+# Changes in state-wide PM levels
+
+It is useful to compare PM~2~.~5~ levels by state since the reduction and management of PM~2~.~5~ is left to the individual states.
+Here we calculate the mean PM~2~.~5~ for each state in 1999 and 2012.
+```{r}
+#calcuate the mean by state
+mean99 <- with(pm99,tapply(Sample.Value,State.Code,mean,na.rm=T))
+mean12 <- with(pm12,tapply(Sample.Value,State.Code,mean,na.rm=T))
+#make seprate dataframes
+df_99 <- data.frame(state=names(mean99),mean=mean99)
+df_12 <- data.frame(state=names(mean12),mean=mean12)
+
+mrg <- merge(df_99,df_12,by="state")
+head(mrg)
+```
+Now we plot the points that represent the means of each PM~2~.~5~ measurement for each year and join the points to show an increase or decrease in PM~2~.~5~.
+```{r}
+names(mrg) <- c("State","1999","2012")
+ggparcoord(mrg,
+    columns = 2:3,
+    showPoints = TRUE, 
+    title = "Mean PM2.5 in each state",
+    scale="globalminmax",
+    alphaLines = 0.3
+    ) + ylab("State-wide Mean PM2.5")+xlab("Year")
+```
+From the plot above we can see that most states have decreased the average PM~2~.~5~ levels.
+
+## Changes in PM levels at an individual monitor
+
+One issue with the previous analysis is that monitoring locations could have changed in the time period between 1999 and 2012. So if for some reason in 2012 there are more monitors concentrated in cleaner parts of the country/State than there were in 1999, it might appear the PM~2~.~5~ levels decreased when they didn't. In this section we will focus on a single monitor in New York State to see if PM~2~.~5~ levels at that monitor decreased from 1999 to 2012.
+
+Firstly we find a monitor in New York State that has data from both datasets. We subset the dataframes to only include results recorded in New York
+(State Code==36), furthermore we only want County.Code and Site.ID as our variables.
+
+```{r}
+site99 <- unique(subset(pm99, State.Code == 36, c(County.Code, Site.ID)))
+site12 <- unique(subset(pm12, State.Code == 36, c(County.Code, Site.ID)))
+```
+
+From these subsets we create a new vector that is a combination of our selected variables (County.Code and Site.ID) separated by '.'.
+
+```{r}
+site99 <- paste(site99[, 1], site99[, 2], sep = ".")
+site12 <- paste(site12[, 1], site12[, 2], sep = ".")
+```
+```{r}
+str(site99)
+```
+```{r}
+str(site12)
+```
+So the intersection of these 2 vectors is all of the monitors that are in New York State that have data from 1999 and 2012
+
+```{r}
+both <- intersect(site12,site99)
+print(both)
+```
+We see that there are 10 monitors.Rather than choose one at random, it would best to choose one that had a reasonable amount of data in each year.
+```{r}
+# adds the vectors above as a new variable (county.site) on the respective dataframes
+pm99$county.site <- with(pm99, paste(County.Code, Site.ID, sep = ".")) 
+pm12$county.site <- with(pm12, paste(County.Code, Site.ID, sep = "."))
+#subsets by all county.site which appear in the intersection and are in the state of New York
+count99 <- subset(pm99, State.Code == 36 & county.site %in% both)
+count12 <- subset(pm12, State.Code == 36 & county.site %in% both)
+```
+Now that we have subset the original data frames to only include the data we are interested in, we can split the data frames and count the number of observations at each monitor to see which ones have the most observations and will be the most useful to compare.
+```{r}
+sapply(split(count99, count99$county.site), nrow)
+```
+```{r}
+sapply(split(count12, count12$county.site), nrow)
+```
+
+From these outputs we can see that most monitors have a suitable amount of observations, we will use county.site==36.2008
+```{r}
+pm99sub <- subset(pm99,State.Code==36 & county.site==63.2008)
+pm12sub<- subset(pm12,State.Code==36 & county.site==63.2008)
+```
+Now we need to combine these dataframes into one and add a factor indicating the year. 
+
+```{r}
+temp_99<- data.frame(values=pm99sub$Sample.Value,date=pm99sub$Date,year="1999")
+temp_12<- data.frame(values=pm12sub$Sample.Value,date=pm12sub$Date,year="2012")
+plot_data <- rbind(temp_99,temp_12)
+plot_data$date <- as.Date(as.character(plot_data$date),"%Y%m%d")
+```
+
+And now we plot the time series of this data to compare the PM~2~.~5~ levels from the monitor from 1999 to 2012,drawing lines on the y axis at the median for each year.
+
+
+```{r}
+ggplot(data=plot_data,aes(x=date,y=values,na.rm=T))+geom_point()+facet_wrap(.~year,scales="free") +ylim(c(0,40))+ylab("PM2.5")+geom_hline(data=subset(plot_data,year==1999),aes(yintercept=median(values,na.rm=T)))+geom_hline(data=subset(plot_data,year==2012),aes(yintercept=median(values,na.rm=T)))
+```
